@@ -5,7 +5,6 @@
 const int NUMPIXELS = 9;
 
 
-
 // Specific for 24 pixel NeoPixelRing
 class LightShow {
 

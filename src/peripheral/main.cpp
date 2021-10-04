@@ -1,31 +1,41 @@
 #include <Arduino.h>
 #include <TinyWireS.h>
+#include <Adafruit_NeoPixel.h>
 
-#include "LightShow.h"
-
+/**
+ * Setups for I2C 
+ **/
 #define I2C_SLAVE_ADDRESS 0x09 // the 7-bit address (remember to change this when adapting this example)
-
-// The default buffer size, Can't recall the scope of defines right now
+// Set the default buffer size, from usiTwiSlave.h
 #ifndef TWI_RX_BUFFER_SIZE
 #define TWI_RX_BUFFER_SIZE ( 16 )
 #endif
 
-// Declarations
+// Declarations for ISRs
 void requestEvent();
 void receiveEvent(uint8_t howMany);
 
-LightShow ring(PB3, 150);
-
-// Tracks the current register pointer position
+// Global variables across ISRs
 volatile uint8_t i2c_regs[6];
 volatile byte reg_position = 0;
 const byte reg_size = sizeof(i2c_regs);
 
+/**
+ * Setups for NeoPixel
+ **/
+const int LED_PIN = PB3;
+const int NUMPIXELS = 9;
+const int BRIGHTNESS = 150;
+Adafruit_NeoPixel pixel = Adafruit_NeoPixel(NUMPIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+/**
+ * Control Commands
+ **/
 uint8_t    IDLE          = 0x00;
-uint8_t    COLOR_CHANGE  = 0x20; // Change Pixel
-uint8_t    LOCK_CHANGE   = 0x40; // Show Pixel Changes 
-uint8_t    TIME_DURATION = 0x60; // How long for pixel to stay on (ms)
-uint8_t    CLEAR         = 0x80; // Wipe all the pixels
+uint8_t    COLOR_CHANGE  = 0x20; // Change Pixel 3 additional bytes of color (doesn't show the change)
+uint8_t    SHOW          = 0x40; // Show pixel changes (this locks the color programming) 
+uint8_t    CLEAR         = 0x80; // Wipe all the pixels and make them go dark.
+uint8_t    TIME_DURATION = 0x60; // How long for pixel to stay on (ms) UNUSED except a for debugging
 uint8_t    UNUSED01      = 0xE0; // 
 uint8_t    UNUSED02      = 0xA0; // 
 uint8_t    UNUSED03      = 0xC0; // 
@@ -33,16 +43,21 @@ uint8_t    CMD_MASK      = 0b11100000;  // mask out the top 3 bits
 
 volatile uint8_t status = IDLE;
 
+
+/** Debugging signal for oscilloscope set to 5 ms per box **/
 const int DEBUG_PIN = PB4;
-/** Debugging signal **/
+#ifdef DEBUG
 void flashy(int times) {
     for(int i=0; i<times; i++) {
-        tws_delay(2);
+        tws_delay(1);
         digitalWrite(DEBUG_PIN, HIGH);
-        tws_delay(2);
+        tws_delay(1);
         digitalWrite(DEBUG_PIN, LOW);
     }
 }
+#else
+#define flashy(a)  {}
+#endif
 
 /**
  * Setup the libraries and signal rediness 
@@ -51,58 +66,65 @@ void setup() {
     pinMode(DEBUG_PIN, OUTPUT);
     digitalWrite(DEBUG_PIN, LOW);
 
-    ring.begin();
+    // initialize the neopixel
+    pixel.begin();
+    pixel.setBrightness(BRIGHTNESS);
+    pixel.clear();
+    pixel.show(); // Initialize all pixels to 'off'
 
     /**
      * Reminder: taking care of pull-ups is the masters job
      */
+    // initialize the tinywire library
     TinyWireS.begin(I2C_SLAVE_ADDRESS);
     TinyWireS.onReceive(receiveEvent);
     TinyWireS.onRequest(requestEvent);
 
+    // debugging marker
     flashy(6);
-
-    ring.pixel.setPixelColor(7, ring.pixel.Color(100, 0, 100));
-    ring.pixel.show();
-
 }
 
 
-
+/**
+ * Run the process and handle the commands 
+ **/
 void loop() {
-    // put your main code here, to run repeatedly:
+    // This needs to be at the top and run for each loop:
     TinyWireS_stop_check();
-    // ring.update();
 
-
-    if (status == LOCK_CHANGE) {
-        flashy(3);
-        ring.pixel.show();
+    if (status == SHOW) {
+        // 2.5 ms to run
+        flashy(1);
+        pixel.show();
         status = IDLE;
-    }
-
-    if (status == COLOR_CHANGE) {
         flashy(2);
-        int      pixel_index = i2c_regs[0] & 0x1F;
-        uint32_t color = ring.pixel.Color(i2c_regs[1], i2c_regs[2], i2c_regs[3]);
-        ring.pixel.setPixelColor(pixel_index, color);
-        status = IDLE;
     }
-    
-    if (status == CLEAR) {
+    else if (status == COLOR_CHANGE) {
+        // 2.5 ms to run
+        flashy(1);
+        int      pixel_index = i2c_regs[0] & 0x1F;
+        uint32_t color = pixel.Color(i2c_regs[1], i2c_regs[2], i2c_regs[3]);
+        pixel.setPixelColor(pixel_index, color);
+        status = IDLE;
+        flashy(3);
+    }
+    else if (status == CLEAR) {
+        flashy(1);
+        // 2.5 ms to run
+        pixel.clear();
+        pixel.show();
+        status = IDLE;
         flashy(4);
-        ring.pixel.clear();
-        ring.pixel.show();
-        status = IDLE;
     }
-
-    if (status == TIME_DURATION) {
-        flashy(5);
+    else if (status == TIME_DURATION) {
+        flashy(1);
+        // 2.5 ms to run
         int      pixel_index = i2c_regs[0] & 0x1F;
-        uint32_t color = ring.pixel.Color(i2c_regs[1], i2c_regs[2], i2c_regs[3]);
-        ring.pixel.setPixelColor(pixel_index, color);
-        ring.pixel.show();
+        uint32_t color = pixel.Color(i2c_regs[1], i2c_regs[2], i2c_regs[3]);
+        pixel.setPixelColor(pixel_index, color);
+        pixel.show();
         status = IDLE;
+        flashy(5);
     }
 
 }
@@ -115,7 +137,9 @@ void loop() {
  * The way to stay in sync, therefore, is to return the address and a 0 to flag the start of multibyte data
  */
 void requestEvent() {
+    // TODO: This is largely done for debugging.  We can return some useful information
     // Logical way to do it.  We are returning the whole buffer for debugging
+    // send the whole command buffer so we can debug the command
     for(int8_t i=0; i < 6; i++) {
         TinyWireS.send(i2c_regs[i]);  // send the recieved byte
     }
@@ -134,7 +158,7 @@ void receiveEvent(uint8_t howMany) {
         return;
     }
 
-    // This works but doesnt use the parameter.  # bytes assumed to be fixed.
+    // This works but doesnt use the howMany parameter.  # bytes assumed to be fixed.
     // int i = 0;
     // while (0 < TinyWireS.available()) { // loop through bytes (we expect 4)
         // i2c_regs[i++] = TinyWireS.receive();      // receive byte as a character
@@ -145,7 +169,8 @@ void receiveEvent(uint8_t howMany) {
         i2c_regs[i] = TinyWireS.receive();      // receive byte as a character
         }
 
-    i2c_regs[4] = howMany;
     status = CMD_MASK & i2c_regs[0];  // set the current status based on the first byte.
+    // For debugging purposes put the values into the status register.
+    i2c_regs[4] = howMany;
     i2c_regs[5] = status;
 }
