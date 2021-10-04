@@ -52,10 +52,12 @@ void clearColors() {
     Wire.endTransmission();
 }
 
+//#define DEBUG 1
 #ifdef DEBUG
-const uint32_t GAP=15; // ms because attiny has a built in 10ms delay
+// If the signal debugging is done in peripheral then this is needed to slow the control down
+#define WAIT_FOR_IT delay(15)
 #else
-const uint32_t GAP=0; // ms because delay is gone.
+#define WAIT_FOR_IT ;
 #endif
 
 /**
@@ -92,17 +94,17 @@ void loop() {
             Serial << cc << "-Transmit" << endl;
 
         } else if (cc=='3') {
-            sendColor(3, 255*rand(), 255*rand(), 255*rand());
+            sendColor(3, random(0,255), random(0,255), random(0,255));
             Serial << cc << "-Transmit" << endl;
 
         } else if (cc=='4') {
             for(int i=0; i<60; i++) {
-                sendColor(5, 255*rand(), 255*rand(), 255*rand());
-                delay(GAP); // seems to be needed to allow the system to work.  This isn't the protocol talking
-                sendColor(6, 255*rand(), 255*rand(), 255*rand());
-                delay(GAP);
-                sendColor(7, 255*rand(), 255*rand(), 255*rand());
-                delay(GAP);
+                sendColor(5, random(0,255), random(0,255), random(0,255));
+                WAIT_FOR_IT; // seems to be needed to allow the system to work.  This isn't the protocol talking
+                sendColor(6, random(0,255), random(0,255), random(0,255));
+                WAIT_FOR_IT;
+                sendColor(7, random(0,255), random(0,255), random(0,255));
+                WAIT_FOR_IT;
                 showColors();
                 delay(50);
             }

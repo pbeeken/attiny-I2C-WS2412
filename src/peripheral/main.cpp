@@ -45,9 +45,10 @@ volatile uint8_t status = IDLE;
 
 
 /** Debugging signal for oscilloscope set to 5 ms per box **/
-const int DEBUG_PIN = PB4;
+//#define DEBUG 1
 #ifdef DEBUG
-void flashy(int times) {
+const int DEBUG_PIN = PB4;
+void FLASHY(int times) {
     for(int i=0; i<times; i++) {
         tws_delay(1);
         digitalWrite(DEBUG_PIN, HIGH);
@@ -56,15 +57,17 @@ void flashy(int times) {
     }
 }
 #else
-#define flashy(a)  {}
+#define FLASHY(a)  ;
 #endif
 
 /**
  * Setup the libraries and signal rediness 
  **/
 void setup() {
+#ifdef DEBUG
     pinMode(DEBUG_PIN, OUTPUT);
     digitalWrite(DEBUG_PIN, LOW);
+#endif
 
     // initialize the neopixel
     pixel.begin();
@@ -81,7 +84,7 @@ void setup() {
     TinyWireS.onRequest(requestEvent);
 
     // debugging marker
-    flashy(6);
+    FLASHY(6);
 }
 
 
@@ -94,37 +97,37 @@ void loop() {
 
     if (status == SHOW) {
         // 2.5 ms to run
-        flashy(1);
+        FLASHY(1);
         pixel.show();
         status = IDLE;
-        flashy(2);
+        FLASHY(2);
     }
     else if (status == COLOR_CHANGE) {
         // 2.5 ms to run
-        flashy(1);
+        FLASHY(1);
         int      pixel_index = i2c_regs[0] & 0x1F;
         uint32_t color = pixel.Color(i2c_regs[1], i2c_regs[2], i2c_regs[3]);
         pixel.setPixelColor(pixel_index, color);
         status = IDLE;
-        flashy(3);
+        FLASHY(3);
     }
     else if (status == CLEAR) {
-        flashy(1);
+        FLASHY(1);
         // 2.5 ms to run
         pixel.clear();
         pixel.show();
         status = IDLE;
-        flashy(4);
+        FLASHY(4);
     }
     else if (status == TIME_DURATION) {
-        flashy(1);
+        FLASHY(1);
         // 2.5 ms to run
         int      pixel_index = i2c_regs[0] & 0x1F;
         uint32_t color = pixel.Color(i2c_regs[1], i2c_regs[2], i2c_regs[3]);
         pixel.setPixelColor(pixel_index, color);
         pixel.show();
         status = IDLE;
-        flashy(5);
+        FLASHY(5);
     }
 
 }
