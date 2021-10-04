@@ -15,7 +15,6 @@ uint8_t    UNUSED03      = 0xC0; //
 uint8_t    CMD_MASK      = 0b11100000;  // mask out the top 3 bits
 
 
-
 void setup() {
     Wire.begin();
     Wire.setWireTimeout(1000);
